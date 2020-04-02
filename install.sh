@@ -63,7 +63,7 @@ subEnumTools(){
     if [ -e ~/go/bin/subfinder ]; then
         echo -e "${BLUE}[!] Subfinder already exists...\n${RESET}"
     else 
-        go get -u github.com/subfinder/subfinder
+         go get -v github.com/subfinder/subfinder/cmd/subfinder
         echo -e "${RED}[+] Setting up API keys for subfinder...${RESET}"
         # Set your API keys here
         ~/go/bin/subfinder --set-config VirustotalAPIKey=<API-KEY-HERE>
