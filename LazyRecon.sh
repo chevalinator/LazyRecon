@@ -33,9 +33,9 @@ ${RED}v$VERSION${RESET} by ${YELLOW}@CaptMeelo${RESET}
 "
 }
 
-
 checkArgs(){
     if [[ $# -eq 0 ]]; then
+	echo -e "$#"
         echo -e "${RED}[+] Usage:${RESET} $0 <domain>\n"
         exit 1
     fi
@@ -70,9 +70,7 @@ enumSubs(){
     runBanner "subfinder"
     ~/go/bin/subfinder -d $TARGET -t 50 -dL $WORDLIST_PATH/dns_all.txt -nW -silent -o $SUB_PATH/subfinder.txt
 
-    echo -e "${RED}\n[+] Combining subdomains...${RESET}"
-    cat $SUB_PATH/*.txt | sort | awk '{print tolower($0)}' | uniq > $SUB_PATH/final-subdomains.txt
-    echo -e "${BLUE}[*] Check the list of subdomains at $SUB_PATH/final-subdomains.txt${RESET}"
+    combineSubdomains
 
     echo -e "${GREEN}\n--==[ Checking for subdomain takeovers ]==--${RESET}"
     runBanner "subjack"
@@ -82,11 +80,16 @@ enumSubs(){
     echo -e "${BLUE}[*] Check subjack's result at $SUB_PATH/final-takeover.txt${RESET}"
 }
 
+combineSubdomains(){
+    echo -e "${RED}\n[+] Combining subdomains...${RESET}"
+    cat $SUB_PATH/*.txt | sort | awk '{print tolower($0)}' | uniq > $SUB_PATH/final-subdomains.txt
+    echo -e "${BLUE}[*] Check the list of subdomains at $SUB_PATH/final-subdomains.txt${RESET}"
+}
 
 corsScan(){
     echo -e "${GREEN}\n--==[ Checking CORS configuration ]==--${RESET}"
     runBanner "CORScanner"
-    python $TOOLS_PATH/CORScanner/cors_scan.py -v -t 50 -i $SUB_PATH/final-subdomains.txt | tee $CORS_PATH/final-cors.txt
+    python $TOOLS_PATH/CORScanner/cors_scan.py -v -t 50 -i $SUB_PATH/httprobe_urls.txt2 | tee $CORS_PATH/final-cors.txt
     echo -e "${BLUE}[*] Check the result at $CORS_PATH/final-cors.txt${RESET}"
 }
 
@@ -115,6 +118,12 @@ portScan(){
     echo -e "${BLUE}[*] Nmap Done! View the HTML report at $PSCAN_PATH/final-nmap.html${RESET}"
 }
 
+checkHttpUsingProbe(){
+    echo -e "${GREEN}\n--==[ Running httpprobe ]==--${RESET}"
+    runBanner "httpprobe"
+    cat $SUB_PATH/final-subdomains.txt | ~/go/bin/httprobe -t 10000 > $SUB_PATH/httprobe_urls.txt2
+    echo -e "${BLUE}[*] Check the result at $SUB_PATH/httprobe_urls.txt2${RESET}"
+}
 
 visualRecon(){
     echo -e "${GREEN}\n--==[ Taking screenshots ]==--${RESET}"
@@ -146,8 +155,67 @@ bruteDir(){
 # Main function
 displayLogo
 checkArgs $TARGET
+
+#parse arguments
+
+	POSITIONAL=()
+	while [[ $# -gt 0 ]]
+	do
+	key="$1"
+	case $key in
+	    -p|--httpprobe)
+            echo "running httpprobe"
+	    checkHttpUsingProbe
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -as|--addsubdomains)
+            echo "Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
+	    combineSubdomains
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -ep|--enumprobe)
+	    setupDir
+	    enumSubs
+	    checkHttpUsingProbe
+	    corsScan
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -l|--lib)
+	    LIBPATH="$2"
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -h|--help)
+	    echo "-as, --addsubdomains  Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
+	    echo "-ep, --enumprobe      Enumerate subdomains then HttpProbe"
+	    echo "-p,  --httpprobe      Run HttpProbe with subdomains stored in final-subdomains.txt"
+            exit 1
+	    shift # past argument
+	    ;;
+	    *)    # unknown option
+	    POSITIONAL+=("$1") # save it in an array for later
+	    shift # past argument
+	    ;;
+	esac
+	done
+	set -- "${POSITIONAL[@]}" # restore positional parameters
+
+	echo "FILE EXTENSION  = ${EXTENSION}"
+	echo "SEARCH PATH     = ${SEARCHPATH}"
+	echo "LIBRARY PATH    = ${LIBPATH}"
+	echo "DEFAULT         = ${DEFAULT}"
+
+
+#Main function
 setupDir
 enumSubs
+checkHttpUsingProbe
 corsScan
 enumIPs
 portScan
