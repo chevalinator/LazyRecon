@@ -70,8 +70,21 @@ enumSubs(){
     runBanner "subfinder"
     ~/go/bin/subfinder -d $TARGET -t 50 -dL $WORDLIST_PATH/dns_all.txt -nW -silent -o $SUB_PATH/subfinder.txt
 
-    combineSubdomains
+    runBanner "sublist3r"
+    python $TOOLS_PATH/Sublist3r/sublist3r.py -d $TARGET -o $SUB_PATH/sublist3r.txt
 
+    combineSubdomains
+    checkSubdomainsTakeover
+
+}
+
+combineSubdomains(){
+    echo -e "${RED}\n[+] Combining subdomains...${RESET}"
+    cat $SUB_PATH/*.txt | sort | awk '{print tolower($0)}' | uniq > $SUB_PATH/final-subdomains.txt
+    echo -e "${BLUE}[*] Check the list of subdomains at $SUB_PATH/final-subdomains.txt${RESET}"
+}
+
+checkSubdomainsTakeover(){
     echo -e "${GREEN}\n--==[ Checking for subdomain takeovers ]==--${RESET}"
     runBanner "subjack"
     ~/go/bin/subjack -a -ssl -t 50 -v -c ~/go/src/github.com/haccer/subjack/fingerprints.json -w $SUB_PATH/final-subdomains.txt -o $SUB_PATH/final-takeover.tmp
@@ -80,11 +93,6 @@ enumSubs(){
     echo -e "${BLUE}[*] Check subjack's result at $SUB_PATH/final-takeover.txt${RESET}"
 }
 
-combineSubdomains(){
-    echo -e "${RED}\n[+] Combining subdomains...${RESET}"
-    cat $SUB_PATH/*.txt | sort | awk '{print tolower($0)}' | uniq > $SUB_PATH/final-subdomains.txt
-    echo -e "${BLUE}[*] Check the list of subdomains at $SUB_PATH/final-subdomains.txt${RESET}"
-}
 
 corsScan(){
     echo -e "${GREEN}\n--==[ Checking CORS configuration ]==--${RESET}"
@@ -107,7 +115,7 @@ enumIPs(){
 portScan(){
     echo -e "${GREEN}\n--==[ Port-scanning targets ]==--${RESET}"
     runBanner "masscan"
-    sudo $TOOLS_PATH/masscan/bin/masscan -p 1-65535 --rate 10000 --wait 0 --open -iL $IP_PATH/final-ips.txt -oX $PSCAN_PATH/masscan.xml
+    sudo $TOOLS_PATH/masscan/bin/masscan -p 1-65535 --rate 5000 --wait 0 --open -iL $IP_PATH/final-ips.txt -oX $PSCAN_PATH/masscan.xml
     xsltproc -o $PSCAN_PATH/final-masscan.html $TOOLS_PATH/nmap-bootstrap.xsl $PSCAN_PATH/masscan.xml
     open_ports=$(cat $PSCAN_PATH/masscan.xml | grep portid | cut -d "\"" -f 10 | sort -n | uniq | paste -sd,)
     echo -e "${BLUE}[*] Masscan Done! View the HTML report at $PSCAN_PATH/final-masscan.html${RESET}"
@@ -117,6 +125,14 @@ portScan(){
     xsltproc -o $PSCAN_PATH/final-nmap.html $PSCAN_PATH/nmap.xml
     echo -e "${BLUE}[*] Nmap Done! View the HTML report at $PSCAN_PATH/final-nmap.html${RESET}"
 }
+
+runNmapOnly(){
+    runBanner "nmap"
+    sudo nmap -sVC --top-ports 1000 --open -v -T4 -Pn -iL $SUB_PATH/final-subdomains.txt -oX $PSCAN_PATH/nmap.xml
+    xsltproc -o $PSCAN_PATH/final-nmap.html $PSCAN_PATH/nmap.xml
+    echo -e "${BLUE}[*] Nmap Done! View the HTML report at $PSCAN_PATH/final-nmap.html${RESET}"
+}
+
 
 checkHttpUsingProbe(){
     echo -e "${GREEN}\n--==[ Running httpprobe ]==--${RESET}"
@@ -133,12 +149,27 @@ visualRecon(){
 }
 
 
+checkbackupfiles(){
+    echo -e "${GREEN}\n--==[ Checking for backupfiles ]==--${RESET}"
+    runBanner "ohmybackup"
+    pushd /usr/share/wordlists/ohmybackdup
+    ~/go/bin/ohmybackup --hostname $1 > $DIR_PATH/dirsearch/$2_backdup.txt
+    popd
+
+}
+
 bruteDir(){
     echo -e "${GREEN}\n--==[ Bruteforcing directories ]==--${RESET}"
     runBanner "dirsearch"
     echo -e "${BLUE}[*]Creating output directory...${RESET}"
     mkdir -p $DIR_PATH/dirsearch
-    for url in $(cat $SSHOT_PATH/aquatone/aquatone_urls.txt); do
+
+    FILEPATH=$SSHOT_PATH/aquatone/aquatone_urls.txt
+    if [[ $# -eq 1 ]]; then
+	echo -e "loading domains from $1 and bruteforcing them"
+        FILEPATH=$1
+    fi
+    for url in $(cat $FILEPATH); do
         fqdn=$(echo $url | sed -e 's;https\?://;;' | sed -e 's;/.*$;;')
         $TOOLS_PATH/dirsearch/dirsearch.py -b -t 100 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp
         if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
@@ -146,11 +177,42 @@ bruteDir(){
         else
             cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.txt
             rm $DIR_PATH/dirsearch/$fqdn.tmp
+	    checkbackupfiles $url $fqdn
         fi
     done
     echo -e "${BLUE}[*] Check the results at $DIR_PATH/dirsearch/${RESET}"
 }
 
+bruteDirOnly(){
+    echo -e "${GREEN}\n--==[ Bruteforcing directories ]==--${RESET}"
+    runBanner "dirsearch"
+    echo -e "${BLUE}[*]Creating output directory...${RESET}"
+    mkdir -p $DIR_PATH/dirsearch
+
+    url=$TARGET
+    fqdn=$(echo $url | sed -e 's;https\?://;;' | sed -e 's;/.*$;;')
+    $TOOLS_PATH/dirsearch/dirsearch.py -b -t 50 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp --timeout=10
+    if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
+      rm $DIR_PATH/dirsearch/$fqdn.tmp
+    else
+      cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.txt
+      rm $DIR_PATH/dirsearch/$fqdn.tmp
+    fi
+
+}
+
+fonctiontest(){
+    echo -e "$#"
+    echo -e "$1"
+    FILEPATH=$SSHOT_PATH/aquatone/aquatone_urls.txt
+    if [[ $# -eq 1 ]]; then
+	echo -e "$#"
+        echo -e "${RED}[+] Usage:${RESET} $0 <domain>\n"
+        FILEPATH=$1
+    fi
+    echo -e "$FILEPATH"
+    exit 1
+}
 
 # Main function
 displayLogo
@@ -163,7 +225,7 @@ checkArgs $TARGET
 	do
 	key="$1"
 	case $key in
-	    -p|--httpprobe)
+	    -hp|--httpprobe)
             echo "running httpprobe"
 	    checkHttpUsingProbe
             exit 1
@@ -177,11 +239,62 @@ checkArgs $TARGET
 	    shift # past argument
 	    shift # past value
 	    ;;
+	    -bl|--brutelistdomains)
+            echo "Bruteforce the list of domains provided in the file passed in the command line"
+	    bruteDir $TARGET
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -bo|--bruteforceonly)
+            echo "Bruteforce the specified domain only without doing anything else"
+	    bruteDirOnly
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -cs|--checksubdomains)
+            echo "Check subdomains takeofer using resutls in final-subdomains.txt"
+	    checkSubdomainsTakeover
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
 	    -ep|--enumprobe)
+	    echo "Enumerate subdomains then HttpProbe"
 	    setupDir
 	    enumSubs
 	    checkHttpUsingProbe
 	    corsScan
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -nm|--nmap)
+	    echo "Run nmap on subdomains in final-subdomains.txt "
+	    runNmapOnly	    
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -ps|--portscan)
+	    echo "Enumerate the ips from the subdomains then Portscan"
+	    enumIPs
+	    portScan
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -ss|--skipsubdomains)
+            echo "Do the whole process skipping domain enumeration, using subdomains listed in final-subdomains.txt directly"
+	    combineSubdomains
+	    checkSubdomainsTakeover
+	    checkHttpUsingProbe
+	    corsScan
+	    enumIPs
+	    portScan
+	    visualRecon
+	    bruteDir
             exit 1
 	    shift # past argument
 	    shift # past value
@@ -192,9 +305,15 @@ checkArgs $TARGET
 	    shift # past value
 	    ;;
 	    -h|--help)
-	    echo "-as, --addsubdomains  Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
-	    echo "-ep, --enumprobe      Enumerate subdomains then HttpProbe"
-	    echo "-p,  --httpprobe      Run HttpProbe with subdomains stored in final-subdomains.txt"
+	    echo "-as, --addsubdomains    Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
+	    echo "-bl, --brutelistdomains Bruteforce the list of domains provided in the file passed in the command line"
+	    echo "-bo, --bruteforceonly   Bruteforce the specified domain only without doing anything else"
+	    echo "-cs, --checksubdomains  Check subdomains takeofer using resutls in final-subdomains.txt"
+	    echo "-ep, --enumprobe        Enumerate subdomains then HttpProbe"
+	    echo "-hp, --httpprobe        Run HttpProbe with subdomains stored in final-subdomains.txt"
+	    echo "-nm, --nmap		  Run nmap on subdomains in final-subdomains.txt"
+	    echo "-ps, --portscan         Enumerate the ips from the subdomains then Portscan"
+	    echo "-ss  --skipsubdomains   Do the whole process skipping domain enumeration, using subdomains listed in final-subdomains.txt directly"
             exit 1
 	    shift # past argument
 	    ;;
