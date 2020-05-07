@@ -63,13 +63,13 @@ subEnumTools(){
     if [ -e ~/go/bin/subfinder ]; then
         echo -e "${BLUE}[!] Subfinder already exists...\n${RESET}"
     else 
-         go get -v github.com/subfinder/subfinder/cmd/subfinder
+        go get -u github.com/subfinder/subfinder
         echo -e "${RED}[+] Setting up API keys for subfinder...${RESET}"
         # Set your API keys here
         ~/go/bin/subfinder --set-config VirustotalAPIKey=<API-KEY-HERE>
         ~/go/bin/subfinder --set-config PassivetotalUsername=<API-KEY-HERE>,PassivetotalKey=<API-KEY-HERE>
         ~/go/bin/subfinder --set-config SecurityTrailsKey=<API-KEY-HERE>
-        ~/go/bin/subfinder --set-config RiddlerEmail=<API-KEY-HERE>,RiddlerPassword=<API-KEY-HERE>
+        #~/go/bin/subfinder --set-config RiddlerEmail=<API-KEY-HERE>,RiddlerPassword=<API-KEY-HERE>
         ~/go/bin/subfinder --set-config CensysUsername=<API-KEY-HERE>,CensysSecret=<API-KEY-HERE>
         ~/go/bin/subfinder --set-config ShodanAPIKey=<API-KEY-HERE>
     fi
@@ -197,6 +197,39 @@ otherTools(){
     fi
 }
 
+ohmybackupTools(){
+    echo -e "${GREEN}\n--==[ Installing ohmybackup  ]==--${RESET}"
+    installBanner "ohmybackup"
+    if [ -e ~/go/bin/ohmybackup2 ]; then
+        echo -e "${BLUE}[!] ohmybackup already exists...\n${RESET}"
+    else 
+        go get -u github.com/tismayil/ohmybackup
+        cd $TOOLS_PATH
+        git clone https://github.com/tismayil/ohmybackup
+        cd ohmybackup
+	sudo mkdir -p /usr/share/ohmybackup/files/
+	sudo cp -avr files/ /usr/share/ohmybackup/files/
+	sudo ln -s /usr/share/ohmybackup/files /usr/share/wordlists/ohmybackdup
+	#sudo ln -s -T /usr/share/ohmybackup/files/files ~/go/bin/files
+        cd $WORKING_DIR
+    fi
+}
+
+sublist3rTools(){
+
+    echo -e "${GREEN}\n--==[ Installing sublist3r ]==--${RESET}"
+    installBanner "sublist3r"
+    if [ "$(ls -A $TOOLS_PATH/sublist3r 2>/dev/null)" ]; then
+        echo -e "${BLUE}[!] sublist3r already exists...\n${RESET}"
+    else
+        cd $TOOLS_PATH
+        git clone https://github.com/aboul3la/Sublist3r.git
+        cd Sublist3r
+        sudo pip install -r requirements.txt
+        cd $WORKING_DIR
+    fi
+
+}
 
 # Main function
 update
@@ -209,5 +242,7 @@ portScanTools
 visualReconTools
 dirBruteTools
 otherTools
+ohmybackupTools
+sublist3rTools
 
 echo -e "${GREEN}--==[ DONE ]==--${RESET}"
