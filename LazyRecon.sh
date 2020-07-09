@@ -14,6 +14,7 @@ IP_PATH="$RESULTS_PATH/ip"
 PSCAN_PATH="$RESULTS_PATH/portscan"
 SSHOT_PATH="$RESULTS_PATH/screenshot"
 DIR_PATH="$RESULTS_PATH/directory"
+VULN_PATH="$RESULTS_PATH/vulnerability"
 
 RED="\033[1;31m"
 GREEN="\033[1;32m"
@@ -51,14 +52,37 @@ runBanner(){
 setupDir(){
     echo -e "${GREEN}--==[ Setting things up ]==--${RESET}"
     echo -e "${RED}\n[+] Creating results directories...${RESET}"
-    rm -rf $RESULTS_PATH
-    mkdir -p $SUB_PATH $CORS_PATH $IP_PATH $PSCAN_PATH $SSHOT_PATH $DIR_PATH
+    #rm -rf $RESULTS_PATH
+    mkdir -p $SUB_PATH $CORS_PATH $IP_PATH $PSCAN_PATH $SSHOT_PATH $DIR_PATH $VULN_PATH
     echo -e "${BLUE}[*] $SUB_PATH${RESET}"
     echo -e "${BLUE}[*] $CORS_PATH${RESET}"
     echo -e "${BLUE}[*] $IP_PATH${RESET}"
     echo -e "${BLUE}[*] $PSCAN_PATH${RESET}"
     echo -e "${BLUE}[*] $SSHOT_PATH${RESET}"
     echo -e "${BLUE}[*] $DIR_PATH${RESET}"
+    echo -e "${BLUE}[*] $VULN_PATH${RESET}"
+}
+
+enumSubsTopDomains(){
+    echo -e "${GREEN}\n--==[ Enumerating subdomains of top domains passed in argument  ]==--${RESET}"
+
+    TOPDOMAINLIST=$TARGET
+    if [[ $# -eq 1 ]]; then
+	echo -e "loading domains from $TOPDOMAINLIST and enumerating them"
+        FILEPATH=$1
+    fi
+    for domain in $(cat $TOPDOMAINLIST); do
+	echo -e "Enumerating $domain"
+    	runBanner "Amass"
+	~/go/bin/amass enum -d $domain -o $SUB_PATH/amass$domain.txt
+
+	runBanner "subfinder"
+	~/go/bin/subfinder -d $domain -t 50 -dL $WORDLIST_PATH/dns_all.txt -nW -silent -o $SUB_PATH/subfinder$domain.txt
+
+	runBanner "sublist3r"
+	python $TOOLS_PATH/Sublist3r/sublist3r.py -d $domain -o $SUB_PATH/sublist3r$domain.txt
+    done
+    combineSubdomains
 }
 
 
@@ -153,7 +177,8 @@ checkbackupfiles(){
     echo -e "${GREEN}\n--==[ Checking for backupfiles ]==--${RESET}"
     runBanner "ohmybackup"
     pushd /usr/share/wordlists/ohmybackdup
-    ~/go/bin/ohmybackup --hostname $1 > $DIR_PATH/dirsearch/$2_backdup.txt
+    urlWithoutTrailingSlash= $1 | sed 's:/*$::'
+    ~/go/bin/ohmybackup --hostname $urlWithoutTrailingSlash > $DIR_PATH/dirsearch/$2_backdup.txt
     popd
 
 }
@@ -201,17 +226,28 @@ bruteDirOnly(){
 
 }
 
-fonctiontest(){
-    echo -e "$#"
-    echo -e "$1"
-    FILEPATH=$SSHOT_PATH/aquatone/aquatone_urls.txt
-    if [[ $# -eq 1 ]]; then
-	echo -e "$#"
-        echo -e "${RED}[+] Usage:${RESET} $0 <domain>\n"
-        FILEPATH=$1
+checkTekerikRCE(){
+    echo -e "${GREEN}\n--==[Test for Telerik UI ASP.NET AJAX RCE ]==--${RESET}"
+
+    #Allow to test the target directly if HTTP Probe file doesn't exist
+    if [ "$(curl --max-time 10 -sk $TARGET/Telerik.Web.UI.WebResource.axd?type=rau | grep "{ \"message\" : \"RadAsyncUpload handler is registered succesfully, however, it may not be accessed directly.\" }")" != "" ]; then
+        echo -e "${RED}[!] $TARGET might be vulnerable to CVE-2019-18935 RCE exploitation \n${RESET}"
+	echo "$TARGET might be vulnerable to CVE-2019-18935 RCE exploitation" >> $VULN_PATH/telerikCVE-2019-18935.txt
+    else
+        echo -e "${BLUE}$TARGET Not vulnerable \n${RESET}"
     fi
-    echo -e "$FILEPATH"
-    exit 1
+
+    FILEPATH=$SUB_PATH/httprobe_urls.txt2
+    for url in $(cat $FILEPATH); do
+        if [ "$(curl -sk $url/Telerik.Web.UI.WebResource.axd?type=rau | grep "{ \"message\" : \"RadAsyncUpload handler is registered succesfully, however, it may not be accessed directly.\" }")" != "" ]; then
+      	  echo -e "${RED}[!] $url might be vulnerable to CVE-2019-18935 RCE exploitation \n${RESET}"
+	  echo "$url might be vulnerable to CVE-2019-18935 RCE exploitation" >> $VULN_PATH/telerikCVE-2019-18935.txt
+    	else
+          echo -e "${BLUE}$url Not vulnerable \n${RESET}"
+        fi
+    done
+
+
 }
 
 # Main function
@@ -270,6 +306,15 @@ checkArgs $TARGET
 	    shift # past argument
 	    shift # past value
 	    ;;
+	    -etcs|--enumtopchecksub)
+	    echo "Enumerate subdomains of the file containing top domains passed in argument then check for subdomains takeover"
+	    setupDir
+	    enumSubsTopDomains	
+	    checkSubdomainsTakeover
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
 	    -nm|--nmap)
 	    echo "Run nmap on subdomains in final-subdomains.txt "
 	    runNmapOnly	    
@@ -290,11 +335,19 @@ checkArgs $TARGET
 	    combineSubdomains
 	    checkSubdomainsTakeover
 	    checkHttpUsingProbe
+	    checkTekerikRCE
 	    corsScan
 	    enumIPs
 	    portScan
 	    visualRecon
 	    bruteDir
+            exit 1
+	    shift # past argument
+	    shift # past value
+	    ;;
+	    -tt|--testtelerik)
+            echo "Test for Telerik ASP.NET AJAX presence. This can lead to RCE via CVE-2019-18935"
+	    checkTekerikRCE
             exit 1
 	    shift # past argument
 	    shift # past value
@@ -305,15 +358,17 @@ checkArgs $TARGET
 	    shift # past value
 	    ;;
 	    -h|--help)
-	    echo "-as, --addsubdomains    Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
-	    echo "-bl, --brutelistdomains Bruteforce the list of domains provided in the file passed in the command line"
-	    echo "-bo, --bruteforceonly   Bruteforce the specified domain only without doing anything else"
-	    echo "-cs, --checksubdomains  Check subdomains takeofer using resutls in final-subdomains.txt"
-	    echo "-ep, --enumprobe        Enumerate subdomains then HttpProbe"
-	    echo "-hp, --httpprobe        Run HttpProbe with subdomains stored in final-subdomains.txt"
-	    echo "-nm, --nmap		  Run nmap on subdomains in final-subdomains.txt"
-	    echo "-ps, --portscan         Enumerate the ips from the subdomains then Portscan"
-	    echo "-ss  --skipsubdomains   Do the whole process skipping domain enumeration, using subdomains listed in final-subdomains.txt directly"
+	    echo "-as, --addsubdomains     Combining all subdomains files in subdomain folder and putting result in final-subdomains.txt"
+	    echo "-bl, --brutelistdomains  Bruteforce the list of domains provided in the file passed in the command line"
+	    echo "-bo, --bruteforceonly    Bruteforce the specified domain only without doing anything else"
+	    echo "-cs, --checksubdomains   Check subdomains takeover using resutls in final-subdomains.txt"
+	    echo "-ep, --enumprobe         Enumerate subdomains then HttpProbe"
+	    echo "-etcs, --enumtopchecksub Enumerate subdomains of the file containing top domains passed in argument then check for subdomains takeover"
+	    echo "-hp, --httpprobe         Run HttpProbe with subdomains stored in final-subdomains.txt"
+	    echo "-nm, --nmap		   Run nmap on subdomains in final-subdomains.txt"
+	    echo "-ps, --portscan          Enumerate the ips from the subdomains then Portscan"
+	    echo "-ss  --skipsubdomains    Do the whole process skipping domain enumeration, using subdomains listed in final-subdomains.txt directly"
+	    echo "-tt  --testtelerik       Test for Telerik ASP.NET AJAX presence. This can lead to RCE via CVE-2019-18935"
             exit 1
 	    shift # past argument
 	    ;;
@@ -335,6 +390,7 @@ checkArgs $TARGET
 setupDir
 enumSubs
 checkHttpUsingProbe
+checkTekerikRCE
 corsScan
 enumIPs
 portScan
