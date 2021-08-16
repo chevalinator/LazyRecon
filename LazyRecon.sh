@@ -177,8 +177,8 @@ checkbackupfiles(){
     echo -e "${GREEN}\n--==[ Checking for backupfiles ]==--${RESET}"
     runBanner "ohmybackup"
     pushd /usr/share/wordlists/ohmybackdup
-    urlWithoutTrailingSlash= $1 | sed 's:/*$::'
-    ~/go/bin/ohmybackup --hostname $urlWithoutTrailingSlash > $DIR_PATH/dirsearch/$2_backdup.txt
+    urlWithoutTrailingSlash=$(echo $1 | sed 's:/*$::')
+    ~/go/bin/ohmybackup --hostname $urlWithoutTrailingSlash  | tee $DIR_PATH/dirsearch/$2_backdup.txt
     popd
 
 }
@@ -196,14 +196,18 @@ bruteDir(){
     fi
     for url in $(cat $FILEPATH); do
         fqdn=$(echo $url | sed -e 's;https\?://;;' | sed -e 's;/.*$;;')
-        $TOOLS_PATH/dirsearch/dirsearch.py -b -t 100 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp
-        if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
-            rm $DIR_PATH/dirsearch/$fqdn.tmp
-        else
-            cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.txt
-            rm $DIR_PATH/dirsearch/$fqdn.tmp
-	    checkbackupfiles $url $fqdn
-        fi
+        #$TOOLS_PATH/dirsearch/dirsearch.py -b -t 100 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp
+        $TOOLS_PATH/dirsearch/dirsearch.py -b -t 100 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --output=$DIR_PATH/dirsearch/$fqdn.html --format=html
+
+	checkbackupfiles $url $fqdn
+	#used to sort results but not used anymore since we output in html
+        #if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
+        #    rm $DIR_PATH/dirsearch/$fqdn.tmp
+        #else
+        #    cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.txt
+        #    rm $DIR_PATH/dirsearch/$fqdn.tmp
+	#    checkbackupfiles $url $fqdn
+        #fi
     done
     echo -e "${BLUE}[*] Check the results at $DIR_PATH/dirsearch/${RESET}"
 }
@@ -214,15 +218,20 @@ bruteDirOnly(){
     echo -e "${BLUE}[*]Creating output directory...${RESET}"
     mkdir -p $DIR_PATH/dirsearch
 
-    url=$TARGET
+    url="https://$TARGET"
     fqdn=$(echo $url | sed -e 's;https\?://;;' | sed -e 's;/.*$;;')
-    $TOOLS_PATH/dirsearch/dirsearch.py -b -t 50 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp --timeout=10
-    if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
-      rm $DIR_PATH/dirsearch/$fqdn.tmp
-    else
-      cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.txt
-      rm $DIR_PATH/dirsearch/$fqdn.tmp
-    fi
+
+    #$TOOLS_PATH/dirsearch/dirsearch.py -b -t 50 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --plain-text-report=$DIR_PATH/dirsearch/$fqdn.tmp --timeout=10
+    $TOOLS_PATH/dirsearch/dirsearch.py -b -t 50 -e php,asp,aspx,jsp,html,zip,jar,sql -x 500,503 -r -w $WORDLIST_PATH/raft-large-words.txt -u $url --output=$DIR_PATH/dirsearch/$fqdn.html --format=html --timeout=10
+
+    checkbackupfiles $url $fqdn
+    #used to sort results but not used anymore since we output in html
+    #if [ ! -s $DIR_PATH/dirsearch/$fqdn.tmp ]; then
+    #  rm $DIR_PATH/dirsearch/$fqdn.tmp
+    #else
+    #  cat $DIR_PATH/dirsearch/$fqdn.tmp | sort -k 1 -n > $DIR_PATH/dirsearch/$fqdn.html
+    #  rm $DIR_PATH/dirsearch/$fqdn.tmp
+    #fi
 
 }
 
