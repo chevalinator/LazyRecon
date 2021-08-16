@@ -174,6 +174,8 @@ dirBruteTools(){
     else
         cd $TOOLS_PATH
         git clone https://github.com/maurosoria/dirsearch
+	cd dirsearch
+        pip3 install -r requirements.txt
         cd $WORKING_DIR
     fi
 }
